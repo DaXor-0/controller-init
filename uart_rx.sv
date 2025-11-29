@@ -1,3 +1,6 @@
+// UART receiver
+// CLKS_PER_BIT sets the number of clk cycles per UART bit (baud tick).
+// rx_dv pulses high for one clk when a full byte is received on rx_byte.
 module uart_rx #(
     parameter int CLKS_PER_BIT = 868
 ) (
@@ -19,7 +22,7 @@ module uart_rx #(
   logic   [2:0] bit_idx = '0;
   logic   [7:0] byte_reg = '0;
 
-  // sync RX to clk domain
+  // Double-flop synchronizer to bring async RX into clk domain
   logic rx_sync_1 = 1'b1, rx_sync_2 = 1'b1;
   always_ff @(posedge clk) begin
     rx_sync_1 <= rx;
@@ -30,14 +33,14 @@ module uart_rx #(
     rx_dv <= 1'b0;
 
     unique case (state)
-      S_IDLE: begin
+      S_IDLE: begin  // wait for start bit (line goes low)
         clk_cnt <= '0;
         bit_idx <= '0;
         if (rx_sync_2 == 1'b0)  // start bit
           state <= S_START;
       end
 
-      S_START: begin
+      S_START: begin  // sample in middle of start bit to confirm low
         if (clk_cnt == (CLKS_PER_BIT - 1) / 2) begin
           if (rx_sync_2 == 1'b0) begin
             clk_cnt <= '0;
@@ -50,7 +53,7 @@ module uart_rx #(
         end
       end
 
-      S_DATA: begin
+      S_DATA: begin  // sample one data bit per CLKS_PER_BIT period, LSB first
         if (clk_cnt < CLKS_PER_BIT - 1) begin
           clk_cnt <= clk_cnt + 1;
         end else begin
@@ -64,7 +67,7 @@ module uart_rx #(
         end
       end
 
-      S_STOP: begin
+      S_STOP: begin  // wait one stop-bit period, then flag byte valid
         if (clk_cnt < CLKS_PER_BIT - 1) begin
           clk_cnt <= clk_cnt + 1;
         end else begin
